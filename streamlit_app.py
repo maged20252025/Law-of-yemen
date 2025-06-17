@@ -16,7 +16,7 @@ from io import BytesIO
 st.set_page_config(
     page_title="القوانين اليمنية بآخر تعديلاتها حتى عام 2025م",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded" # لجعل الشريط الجانبي مفتوحاً افتراضياً
 )
 
 # ----------------------------------------------------
@@ -27,7 +27,7 @@ TRIAL_USERS_FILE = "trial_users.txt"
 DEVICE_ID_FILE = "device_id.txt"
 ACTIVATED_FILE = "activated.txt"
 ACTIVATION_CODES_FILE = "activation_codes.txt"
-LAWS_DIR = "laws"
+LAWS_DIR = "laws" # تعريف مجلد القوانين هنا
 
 # ----------------------------------------------------
 # دوال المساعدة
@@ -104,6 +104,7 @@ def export_results_to_word(results, filename="نتائج_البحث.docx"):
 # وظيفة التطبيق الرئيسية (بعد التفعيل أو بدء التجربة)
 # ----------------------------------------------------
 def run_main_app():
+    # الأزرار العائمة للتمرير
     components.html("""
     <style>
     .scroll-btn {
@@ -112,7 +113,7 @@ def run_main_app():
         padding: 12px;
         font-size: 24px;
         border-radius: 50%;
-        background-color: #c5e1a5;
+        background-color: #c5e1a5; /* لون أخضر فاتح */
         color: black;
         cursor: pointer;
         z-index: 9999;
@@ -126,6 +127,7 @@ def run_main_app():
     <button class='scroll-btn' id='scroll-bottom-btn' onclick='window.scrollTo({top: document.body.scrollHeight, behavior: "smooth"});'>⬇️</button>
     """, height=1)
 
+    # التحقق من وجود مجلد القوانين
     if not os.path.exists(LAWS_DIR):
         st.error(f"⚠️ مجلد '{LAWS_DIR}/' غير موجود. يرجى التأكد من وجود ملفات القوانين.")
         return
@@ -135,42 +137,64 @@ def run_main_app():
         st.warning(f"📂 لا توجد ملفات قوانين في مجلد '{LAWS_DIR}/'.")
         return
 
+    # تهيئة session_state لنتائج البحث وحالة البحث
+    if "results" not in st.session_state:
+        st.session_state.results = []
+    if "search_done" not in st.session_state:
+        st.session_state.search_done = False
+    
+    # متغيرة لتخزين الكلمات المفتاحية والقانون المختار من الشريط الجانبي
+    # سيتم استخدام هذه القيم في دورات Streamlit التالية
+    current_selected_file = None
+    current_keywords = ""
+
+    # استخدام الشريط الجانبي للإعدادات
     with st.sidebar:
         st.header("⚙️ إعدادات البحث")
-        selected_file = st.selectbox("اختر قانونًا للبحث:", ["الكل"] + files, key="sidebar_file_select")
-        keywords = st.text_area("الكلمات المفتاحية (افصل بفاصلة):", key="sidebar_keywords_input",
+        current_selected_file = st.selectbox("اختر قانونًا للبحث:", ["الكل"] + files, key="sidebar_file_select")
+        current_keywords = st.text_area("الكلمات المفتاحية (افصل بفاصلة):", key="sidebar_keywords_input",
                                 help="أدخل الكلمات التي تريد البحث عنها، وافصل بينها بفاصلة إذا كانت أكثر من كلمة.")
 
-        search_button_clicked = st.button("🔍 بدء البحث", key="sidebar_search_button", use_container_width=True)
-        st.markdown("---")
-        st.info("تلميح: استخدم الشريط الجانبي لإدخال كلمات البحث واختيار القانون، ثم انقر على 'بدء البحث'.")
+        # زر البحث في الشريط الجانبي
+        # هذا الزر سيقوم بتشغيل دالة البحث مباشرة
+        if st.button("🔍 بدء البحث", key="sidebar_search_button", use_container_width=True):
+            if current_keywords:
+                kw_list = [k.strip() for k in current_keywords.split(",") if k.strip()]
+                results = []
+                search_files = files if current_selected_file == "الكل" else [current_selected_file]
 
-    st.markdown("<h2 style='text-align: center; color: #388E3C;'>نتائج البحث في القوانين 📚</h2>", unsafe_allow_html=True)
-    st.markdown("---")
+                with st.spinner("جاري البحث في القوانين... قد يستغرق الأمر بعض الوقت."):
+                    for file in search_files:
+                        try:
+                            doc = Document(os.path.join(LAWS_DIR, file))
+                        except Exception as e:
+                            st.warning(f"⚠️ تعذر قراءة الملف {file}: {e}. يرجى التأكد من أنه ملف DOCX صالح.")
+                            continue
 
-    if search_button_clicked and keywords:
-        kw_list = [k.strip() for k in keywords.split(",") if k.strip()]
-        results = []
-        search_files = files if selected_file == "الكل" else [selected_file]
+                        law_name = file.replace(".docx", "")
+                        last_article = "غير معروفة"
+                        current_article_paragraphs = []
 
-        with st.spinner("جاري البحث في القوانين... قد يستغرق الأمر بعض الوقت."):
-            for file in search_files:
-                try:
-                    doc = Document(os.path.join(LAWS_DIR, file))
-                except Exception as e:
-                    st.warning(f"⚠️ تعذر قراءة الملف {file}: {e}. يرجى التأكد من أنه ملف DOCX صالح.")
-                    continue
+                        for para in doc.paragraphs:
+                            txt = para.text.strip()
+                            if not txt:
+                                continue
+                            match = re.match(r"مادة\s*[\(]?\s*(\d+)[\)]?", txt)
+                            if match:
+                                if current_article_paragraphs:
+                                    full_text = "\n".join(current_article_paragraphs)
+                                    if any(kw.lower() in full_text.lower() for kw in kw_list):
+                                        highlighted = highlight_keywords(full_text, kw_list)
+                                        results.append({
+                                            "law": law_name,
+                                            "num": last_article,
+                                            "text": highlighted,
+                                            "plain": full_text
+                                        })
+                                    current_article_paragraphs = []
+                                last_article = match.group(1)
+                            current_article_paragraphs.append(txt)
 
-                law_name = file.replace(".docx", "")
-                last_article = "غير معروفة"
-                current_article_paragraphs = []
-
-                for para in doc.paragraphs:
-                    txt = para.text.strip()
-                    if not txt:
-                        continue
-                    match = re.match(r"مادة\s*[\(]?\s*(\d+)[\)]?", txt)
-                    if match:
                         if current_article_paragraphs:
                             full_text = "\n".join(current_article_paragraphs)
                             if any(kw.lower() in full_text.lower() for kw in kw_list):
@@ -181,33 +205,35 @@ def run_main_app():
                                     "text": highlighted,
                                     "plain": full_text
                                 })
-                            current_article_paragraphs = []
-                        last_article = match.group(1)
-                    current_article_paragraphs.append(txt)
 
-                if current_article_paragraphs:
-                    full_text = "\n".join(current_article_paragraphs)
-                    if any(kw.lower() in full_text.lower() for kw in kw_list):
-                        highlighted = highlight_keywords(full_text, kw_list)
-                        results.append({
-                            "law": law_name,
-                            "num": last_article,
-                            "text": highlighted,
-                            "plain": full_text
-                        })
+                st.session_state.results = results
+                st.session_state.search_done = True
+                if not results:
+                    st.info("لم يتم العثور على نتائج للكلمات المفتاحية المحددة.")
+                # هنا، بعد انتهاء البحث، يمكننا إجبار Streamlit على إعادة التشغيل
+                # لتحديث الواجهة الرئيسية لعرض النتائج.
+                # هذا هو أحد الأماكن القليلة التي قد تحتاج فيها إلى rerun بعد إجراء معالجة طويلة.
+                # ولكن إذا أزالناها، فسيتم تحديث النتائج في التفاعل التالي للمستخدم.
+                # نظرًا للمشاكل السابقة، دعنا نتجنبها هنا أيضاً.
+            else:
+                st.warning("يرجى إدخال كلمات مفتاحية للبحث.")
+        
+        st.markdown("---")
+        st.info("تلميح: استخدم الشريط الجانبي لإدخال كلمات البحث واختيار القانون، ثم انقر على 'بدء البحث'.")
 
-        st.session_state.results = results
-        st.session_state.search_done = True
-        if not results:
-            st.info("لم يتم العثور على نتائج للكلمات المفتاحية المحددة.")
 
-    if st.session_state.get("search_done", False):
+    # الواجهة الرئيسية لعرض النتائج وزر التصدير
+    st.markdown("<h2 style='text-align: center; color: #388E3C;'>نتائج البحث في القوانين 📚</h2>", unsafe_allow_html=True)
+    st.markdown("---")
+
+    # عرض زر التصدير ونتائج البحث فقط إذا تم البحث بالفعل وهناك نتائج
+    if st.session_state.get("search_done", False): # تأكد من أن البحث قد تم
         results = st.session_state.results
         unique_laws = sorted(set(r["law"] for r in results))
 
         st.metric(label="📊 إجمالي النتائج التي تم العثور عليها", value=f"{len(results)}", delta=f"في {len(unique_laws)} قانون/ملف")
 
-        if results:
+        if results: # يظهر فقط إذا كانت هناك نتائج
             export_data = export_results_to_word(results)
             st.download_button(
                 label="⬇️ تصدير النتائج إلى Word",
@@ -222,7 +248,7 @@ def run_main_app():
         
         st.markdown("---")
 
-        if results:
+        if results: # فقط إذا كانت هناك نتائج لعرضها
             selected_law_filter = st.selectbox("فلترة النتائج حسب القانون:", ["الكل"] + unique_laws, key="results_law_filter")
             filtered = results if selected_law_filter == "الكل" else [r for r in results if r["law"] == selected_law_filter]
 
@@ -275,10 +301,7 @@ def main():
             if st.button("🚀 بدء التجربة المجانية (3 دقائق)", key="start_trial_button", use_container_width=True):
                 register_trial(device_id)
                 st.success("✅ بدأت النسخة التجريبية الآن. لديك 3 دقائق لاستخدام التطبيق.")
-                # لا يوجد st.experimental_rerun() هنا.
-                # المستخدم سيحتاج إلى تفاعل آخر لتحديث الواجهة.
-                # أو يمكننا إعلامه بذلك بوضوح.
-                st.warning("يرجى التفاعل مع الصفحة (مثلاً، النقر بالماوس أو التمرير) لتحديث العداد وبدء استخدام التطبيق.")
+                st.warning("يرجى التفاعل مع الصفحة (مثلاً، النقر بالماوس أو التمرير) لتحديث الواجهة وبدء استخدام التطبيق.")
 
         if trial_start is not None:
             elapsed_time = time.time() - trial_start
