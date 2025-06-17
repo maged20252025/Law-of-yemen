@@ -51,13 +51,15 @@ def get_trial_start(device_id):
                 return float(row[1])
     return None
 
+
 def register_trial(device_id):
-    if not os.path.exists(TRIAL_USERS_FILE):
-        with open(TRIAL_USERS_FILE, "w", newline='') as f:
-            pass
+    need_header = not os.path.exists(TRIAL_USERS_FILE) or os.path.getsize(TRIAL_USERS_FILE) == 0
     with open(TRIAL_USERS_FILE, "a", newline='') as f:
         writer = csv.writer(f)
+        if need_header:
+            writer.writerow(["device_id", "start_time"])
         writer.writerow([device_id, time.time()])
+
 
 def is_activated():
     return os.path.exists(ACTIVATED_FILE)
@@ -136,20 +138,24 @@ def run_main_app():
         return
 
     # تهيئة session_state لنتائج البحث وحالة البحث
-
-    st.markdown("### 🔎 نموذج البحث")
-    with st.form("main_search_form"):
-        selected_file_form = st.selectbox("اختر قانونًا للبحث:", ["الكل"] + files, key="main_file_select")
-        keywords_form = st.text_area("📌 الكلمات المفتاحية (افصل بفاصلة):", key="main_keywords_input",
-                                     help="أدخل الكلمات التي تريد البحث عنها، وافصل بينها بفاصلة إذا كانت أكثر من كلمة.")
-        submitted = st.form_submit_button("🔍 بدء البحث", use_container_width=True)
-
     if "results" not in st.session_state:
         st.session_state.results = []
     if "search_done" not in st.session_state:
         st.session_state.search_done = False
     
-    
+    # استخدام st.form في الشريط الجانبي
+    with st.sidebar:
+        st.header("⚙️ إعدادات البحث")
+        with st.form("search_form"): # هنا يتم تعريف النموذج
+            selected_file_form = st.selectbox("اختر قانونًا للبحث:", ["الكل"] + files, key="sidebar_file_select_form")
+            keywords_form = st.text_area("الكلمات المفتاحية (افصل بفاصلة):", key="sidebar_keywords_input_form",
+                                        help="أدخل الكلمات التي تريد البحث عنها، وافصل بينها بفاصلة إذا كانت أكثر من كلمة.")
+            
+            # زر الإرسال للنموذج
+            submitted = st.form_submit_button("🔍 بدء البحث", use_container_width=True)
+        
+        st.markdown("---")
+        st.info("تلميح: أدخل كلمات البحث واختيار القانون في الأعلى، ثم انقر على 'بدء البحث'.")
 
     # تنفيذ البحث فقط إذا تم إرسال النموذج
     if submitted:
